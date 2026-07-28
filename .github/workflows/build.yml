@@ -1,0 +1,28 @@
+# Phase-2 CI: build the wheel set on GitHub's windows-11-arm runners.
+#
+# NOT enabled by default. Known constraints before turning this on:
+# - Free arm64 runners are 4-core; the torch build alone would likely exceed
+#   the 6h job limit cold. Needs sccache seeded via actions/cache (or a
+#   self-hosted runner on a Spark box) to be practical.
+# - The CUDA 13.4 developer-preview toolkit cannot be redistributed; CI must
+#   download it from NVIDIA's official URL at job start (cache the installer,
+#   not the extracted toolkit, if the EULA requires).
+# - cuDNN/APL/BuildTools install unattended (see build.py doctor).
+name: build-spark-wheels
+on:
+  workflow_dispatch: {}
+
+jobs:
+  small-wheels:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain doctor
+        run: python build.py doctor
+        continue-on-error: true
+      - name: Build small wheels
+        run: python build.py small-wheels
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-wheels
+          path: dist/*.whl

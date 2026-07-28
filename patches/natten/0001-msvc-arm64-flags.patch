@@ -1,0 +1,43 @@
+diff --git a/csrc/CMakeLists.txt b/csrc/CMakeLists.txt
+index add3c8f..d8954b0 100644
+--- a/csrc/CMakeLists.txt
++++ b/csrc/CMakeLists.txt
+@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+ project(natten LANGUAGES CXX CUDA)
+ 
+ find_package(CUDAToolkit 12.0 REQUIRED)
+-set(CXX_STD "17" CACHE STRING "C++ standard")
++set(CXX_STD "20" CACHE STRING "C++ standard")
+ 
+ 
+ if(NOT DEFINED PYTHON_PATH)
+@@ -79,8 +79,14 @@ set(CMAKE_CUDA_FLAGS_DEBUG "-O0 -G -Xcompiler -Wall")
+ set(CMAKE_CXX_STANDARD "${CXX_STD}")
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
+-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-Wconversion")
+-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-fno-strict-aliasing")
++if(MSVC)
++  # MSVC host: no -Wconversion/-fno-strict-aliasing; CUDA 13.4 CCCL needs the
++  # conforming preprocessor, and CUTLASS cute needs /Zc:twoPhase- in C++20.
++  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=/Zc:preprocessor -Xcompiler=/Zc:__cplusplus -Xcompiler=/Zc:lambda -Xcompiler=/permissive- -Xcompiler=/Zc:twoPhase- -Xcompiler=/EHsc")
++else()
++  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-Wconversion")
++  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-fno-strict-aliasing")
++endif()
+ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --use_fast_math")
+ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda")
+ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -ftemplate-backtrace-limit=0")
+@@ -90,7 +96,11 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3")
+ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -DNDEBUG")
+ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --std=c++${CXX_STD}")
+ 
+-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
++if(MSVC)
++  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /Zc:preprocessor /Zc:__cplusplus /Zc:lambda /Zc:twoPhase- /EHsc")
++else()
++  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
++endif()
+ set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} -Xcompiler -O3")
+ set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} --use_fast_math")
+ 

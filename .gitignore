@@ -1,0 +1,11 @@
+# Built artifacts ship as GitHub release assets, never in the repo
+dist/
+*.whl
+*.zip
+*.tar.gz
+
+# Local build state
+_strip/
+*.log
+__pycache__/
+workspaces/

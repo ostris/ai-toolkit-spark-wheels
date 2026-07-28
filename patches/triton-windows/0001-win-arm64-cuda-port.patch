@@ -1,0 +1,619 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c4c9db6..f5957e5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -327,6 +327,12 @@ if(TRITON_BUILD_PYTHON_MODULE)
+     set(Python_VERSION "${Python3_VERSION}")
+     set(Python_INTERPRETER_ID "${Python3_INTERPRETER_ID}")
+   endif()
++  # nanobind's config also requires the Python::Interpreter target
++  if(NOT TARGET Python::Interpreter)
++    add_executable(Python::Interpreter IMPORTED)
++    set_target_properties(Python::Interpreter PROPERTIES
++      IMPORTED_LOCATION "${Python3_EXECUTABLE}")
++  endif()
+ 
+   find_package(nanobind CONFIG REQUIRED HINTS "${Python3_SITELIB}")
+   nanobind_build_library(nanobind-static)
+@@ -406,10 +412,18 @@ if(TRITON_BUILD_PYTHON_MODULE)
+ 
+   set(TRITON_BACKENDS_TUPLE "(${TRITON_BACKENDS_TUPLE})")
+   add_compile_definitions(TRITON_BACKENDS_TUPLE=${TRITON_BACKENDS_TUPLE})
++  if(MSVC)
++    # gsan's bitfield layout static_asserts do not hold under MSVC packing;
++    # the experimental sanitizer testing module is excluded on Windows.
++    set(TRITON_GSAN_TESTING_SRC "")
++    add_compile_definitions(TRITON_NO_GSAN_TESTING)
++  else()
++    set(TRITON_GSAN_TESTING_SRC ${CMAKE_CURRENT_SOURCE_DIR}/python/triton/experimental/gsan/src/gsan_testing.cc)
++  endif()
+   add_library(triton SHARED ${PYTHON_SRC_PATH}/main.cc
+                   ${PYTHON_SRC_PATH}/ir.cc
+                   ${PYTHON_SRC_PATH}/gluon_ir.cc
+-                  ${CMAKE_CURRENT_SOURCE_DIR}/python/triton/experimental/gsan/src/gsan_testing.cc
++                  ${TRITON_GSAN_TESTING_SRC}
+                   ${PYTHON_SRC_PATH}/linear_layout.cc
+                   ${PYTHON_SRC_PATH}/passes.cc
+                   ${PYTHON_SRC_PATH}/interpreter.cc
+diff --git a/python/src/main.cc b/python/src/main.cc
+index c0b9999..04414b8 100644
+--- a/python/src/main.cc
++++ b/python/src/main.cc
+@@ -47,7 +47,9 @@ void init_triton_interpreter(nanobind::module_ &m);
+ void init_triton_passes(nanobind::module_ &m);
+ void init_triton_stacktrace_hook(nanobind::module_ &m);
+ void init_gluon_ir(nanobind::module_ &m);
++#ifndef TRITON_NO_GSAN_TESTING
+ void init_gsan_testing(nanobind::module_ &m);
++#endif
+ void init_linear_layout(nanobind::module_ &m);
+ void init_native_specialize(nanobind::module_ &m);
+ FOR_EACH_P(DECLARE_BACKEND, TRITON_BACKENDS_TUPLE)
+@@ -65,8 +67,10 @@ NB_MODULE(libtriton, m) {
+   init_triton_interpreter(interpreter_m);
+   auto llvm_m = m.def_submodule("llvm");
+   init_triton_llvm(llvm_m);
++#ifndef TRITON_NO_GSAN_TESTING
+   auto gsan_m = m.def_submodule("gsan_testing");
+   init_gsan_testing(gsan_m);
++#endif
+   auto ll_m = m.def_submodule("linear_layout");
+   init_linear_layout(ll_m);
+   auto gluon_m = m.def_submodule("gluon_ir");
+diff --git a/python/triton/experimental/gsan/src/GSan.h b/python/triton/experimental/gsan/src/GSan.h
+index 853a3cb..389db06 100644
+--- a/python/triton/experimental/gsan/src/GSan.h
++++ b/python/triton/experimental/gsan/src/GSan.h
+@@ -13,11 +13,20 @@
+ 
+ namespace gsan {
+ 
++#if defined(_MSC_VER) && !defined(__clang__)
++// MSVC does not define the GCC/Clang __*_TYPE__ builtin macros
++using size_t = decltype(sizeof(0));
++using uint8_t = unsigned char;
++using uint16_t = unsigned short;
++using uint32_t = unsigned int;
++using uintptr_t = unsigned long long;
++#else
+ using size_t = __SIZE_TYPE__;
+ using uint8_t = __UINT8_TYPE__;
+ using uint16_t = __UINT16_TYPE__;
+ using uint32_t = __UINT32_TYPE__;
+ using uintptr_t = __UINTPTR_TYPE__;
++#endif
+ 
+ // Reserve 1 PiB, should be big enough for a while :)
+ static constexpr size_t kReserveSize = 1ull << 40;
+diff --git a/python/triton/knobs.py b/python/triton/knobs.py
+index d3cbc9a..1314073 100644
+--- a/python/triton/knobs.py
++++ b/python/triton/knobs.py
+@@ -194,11 +194,13 @@ class NvidiaTool:
+ class env_nvidia_tool(env_base[str, NvidiaTool]):
+ 
+     def __init__(self, binary: str) -> None:
+-        binary += sysconfig.get_config_var("EXE")
++        # Compute the env key from the bare tool name BEFORE appending the
++        # platform EXE suffix, so Windows keys don't contain ".EXE".
++        env_key = f"TRITON_{binary.upper().replace('-', '_')}_PATH"
++        binary += sysconfig.get_config_var("EXE") or ""
+         self.binary = binary
+         self.default_path = os.path.join(os.path.dirname(__file__), "backends", "nvidia", "bin", binary)
+-        # Convert ptxas-blackwell to PTXAS_BLACKWELL, not PTXAS-BLACKWELL
+-        super().__init__(f"TRITON_{binary.upper().replace('-', '_')}_PATH")
++        super().__init__(env_key)
+ 
+     def get(self) -> NvidiaTool:
+         return self.transform(getenv(self.key))
+diff --git a/python/triton/runtime/build.py b/python/triton/runtime/build.py
+index 3db9346..06ff9cf 100644
+--- a/python/triton/runtime/build.py
++++ b/python/triton/runtime/build.py
+@@ -72,6 +72,36 @@ def _build(name: str, src: str, srcdir: str, library_dirs: list[str], include_di
+     py_include_dir = sysconfig.get_paths(scheme=scheme)["include"]
+     custom_backend_dirs = knobs.build.backend_dirs
+     include_dirs = include_dirs + [srcdir, py_include_dir, *custom_backend_dirs]
++    if os.name == "nt" and os.path.basename(cc).lower() in ("cl", "cl.exe"):
++        # MSVC: translate to cl syntax; .pyd must link the python import lib.
++        py_lib_dir = os.path.join(os.path.dirname(sysconfig.get_paths()["include"]), "libs")
++        ver = sysconfig.get_config_var("VERSION") or ""
++        py_lib = f"python{ver}.lib" if ver else "python3.lib"
++
++        def _msvc_lib(lib: str) -> str:
++            lib = os.path.basename(lib)
++            if lib.startswith("libcuda.so") or lib == "cuda":
++                return "cuda.lib"
++            if lib.endswith(".lib"):
++                return lib
++            return f"{lib}.lib"
++
++        cc_cmd = [cc, src, "/nologo", "/O2", "/LD", "/MD"]
++        if language == "c++":
++            cc_cmd += ["/std:c++17", "/EHsc"]
++        else:
++            # C11 for _Alignas; stdalign.h provides the alignof macro in C
++            cc_cmd += ["/std:c11", "/FIstdalign.h"]
++        cc_cmd += [f"/I{dir}" for dir in include_dirs if dir is not None]
++        cc_cmd += ccflags
++        cc_cmd += [f"/Fe:{so}", "/link"]
++        cc_cmd += [f"/LIBPATH:{dir}" for dir in library_dirs + [py_lib_dir]]
++        cc_cmd += [_msvc_lib(lib) for lib in libraries] + [py_lib]
++        result = subprocess.run(cc_cmd, capture_output=True, text=True, cwd=srcdir)
++        if result.returncode != 0:
++            raise RuntimeError(
++                "MSVC launcher build failed: " + result.stdout + " || " + result.stderr)
++        return so
+     # for -Wno-psabi, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111047
+     cc_cmd = [cc, src, "-O3", "-shared", "-fPIC", "-Wno-psabi", "-o", so]
+     if language == "c++":
+diff --git a/setup.py b/setup.py
+index 1f05687..94a7b62 100644
+--- a/setup.py
++++ b/setup.py
+@@ -181,12 +181,21 @@ def update_symlink(link_path, source_path):
+ 
+     if link_path.is_symlink():
+         link_path.unlink()
+-    elif link_path.exists():
++    elif link_path.is_dir():
+         shutil.rmtree(link_path)
++    elif link_path.exists():
++        link_path.unlink()
+ 
+     print(f"creating symlink: {link_path} -> {source_path}", file=sys.stderr)
+     link_path.absolute().parent.mkdir(parents=True, exist_ok=True)  # Ensure link's parent directory exists
+-    link_path.symlink_to(source_path.absolute(), target_is_directory=True)
++    try:
++        link_path.symlink_to(source_path.absolute(), target_is_directory=True)
++    except OSError:
++        # Windows without Developer Mode: symlinks need privilege; copy instead
++        if source_path.is_dir():
++            shutil.copytree(source_path, link_path, dirs_exist_ok=True)
++        else:
++            shutil.copy2(source_path, link_path)
+ 
+ 
+ # ---- cmake extension ----
+diff --git a/third_party/amd/include/dlfcn.h b/third_party/amd/include/dlfcn.h
+new file mode 100644
+index 0000000..534eeac
+--- /dev/null
++++ b/third_party/amd/include/dlfcn.h
+@@ -0,0 +1,66 @@
++// Minimal dlfcn shim for Windows builds of the Triton NVIDIA backend.
++// Maps POSIX dl* APIs onto Win32 (only what cublas_instance.h needs).
++#ifndef TRITON_WIN_DLFCN_SHIM_H
++#define TRITON_WIN_DLFCN_SHIM_H
++#ifdef _WIN32
++
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#include <stdio.h>
++#include <string.h>
++
++// windows.h macro leaks that collide with LLVM identifiers
++#ifdef NO_ERROR
++#undef NO_ERROR
++#endif
++#ifdef ERROR
++#undef ERROR
++#endif
++#ifdef OPTIONAL
++#undef OPTIONAL
++#endif
++
++#define RTLD_LAZY 0x1
++#define RTLD_NOW 0x2
++#define RTLD_LOCAL 0x4
++#define RTLD_GLOBAL 0x8
++#define RTLD_NOLOAD 0x10
++
++static inline void *dlopen(const char *name, int flags) {
++  // POSIX library names that callers hardcode -> Windows equivalents
++  if (name && strcmp(name, "libcuda.so.1") == 0)
++    name = "nvcuda.dll";
++  if (flags & RTLD_NOLOAD) {
++    HMODULE mod = NULL;
++    GetModuleHandleExA(0, name, &mod);
++    return (void *)mod;
++  }
++  return (void *)LoadLibraryA(name);
++}
++
++static inline void *dlsym(void *handle, const char *symbol) {
++  return (void *)GetProcAddress((HMODULE)handle, symbol);
++}
++
++static inline int dlclose(void *handle) {
++  return FreeLibrary((HMODULE)handle) ? 0 : -1;
++}
++
++static inline const char *dlerror(void) {
++  static char buf[64];
++  DWORD err = GetLastError();
++  if (err == 0)
++    return NULL;
++  snprintf(buf, sizeof(buf), "win32 error %lu", (unsigned long)err);
++  return buf;
++}
++
++#else
++#include_next <dlfcn.h>
++#endif // _WIN32
++#endif // TRITON_WIN_DLFCN_SHIM_H
+diff --git a/third_party/nvidia/CMakeLists.txt b/third_party/nvidia/CMakeLists.txt
+index 6224239..2b5d868 100644
+--- a/third_party/nvidia/CMakeLists.txt
++++ b/third_party/nvidia/CMakeLists.txt
+@@ -11,10 +11,11 @@ if(TRITON_BUILD_PYTHON_MODULE)
+ 
+   find_program(TRITON_GSAN_CLANGXX NAMES clang++
+                PATHS "${LLVM_SYSPATH}/bin"
+-               REQUIRED NO_DEFAULT_PATH)
++               NO_DEFAULT_PATH)
+   if(NOT TRITON_GSAN_CLANGXX)
+-    message(FATAL_ERROR "clang++ is required to build gsan.ll")
++    message(WARNING "clang++ not found - skipping experimental GSan runtime")
+   endif()
++  if(TRITON_GSAN_CLANGXX)
+ 
+   set(TRITON_GSAN_INCLUDE_FLAGS "")
+   foreach(include_path IN ITEMS "${TRITON_CUDACRT_PATH}" "${TRITON_CUDART_PATH}")
+@@ -46,10 +47,13 @@ if(TRITON_BUILD_PYTHON_MODULE)
+       COMMENT "Building GSan runtime"
+       VERBATIM)
+   add_custom_target(TritonNVIDIAGSanRuntime ALL DEPENDS "${GSAN_RUNTIME_IR}")
++  endif()
+ 
+   add_triton_plugin(TritonNVIDIA ${CMAKE_CURRENT_SOURCE_DIR}/triton_nvidia.cc LINK_LIBS TritonNVIDIAGPUToLLVM NVGPUToLLVM)
+   target_link_libraries(TritonNVIDIA PRIVATE Python3::Module nanobind-static)
+-  add_dependencies(TritonNVIDIA TritonNVIDIAGSanRuntime)
++  if(TRITON_GSAN_CLANGXX)
++    add_dependencies(TritonNVIDIA TritonNVIDIAGSanRuntime)
++  endif()
+ endif()
+ if(TRITON_BUILD_UT)
+   add_subdirectory(unittest)
+diff --git a/third_party/nvidia/backend/compiler.py b/third_party/nvidia/backend/compiler.py
+index 5b66791..2aff169 100644
+--- a/third_party/nvidia/backend/compiler.py
++++ b/third_party/nvidia/backend/compiler.py
+@@ -510,6 +510,8 @@ class CUDABackend(BaseBackend):
+             tempfile.NamedTemporaryFile(delete=False, mode='r', suffix='.log') as flog:
+             fsrc.write(src)
+             fsrc.flush()
++            # Windows: ptxas cannot open the .ptx while we hold it open
++            fsrc.close()
+             fbin = fsrc.name + '.o'
+ 
+             debug_info = []
+@@ -546,7 +548,11 @@ class CUDABackend(BaseBackend):
+                 fsrc.name, '-o', fbin
+             ]
+             try:
+-                subprocess.run(ptxas_cmd, check=True, close_fds=False, stderr=flog)
++                # Windows: close our handle so ptxas can write and we can
++                # delete the log afterwards
++                flog.close()
++                with open(flog.name, 'w') as _flog_w:
++                    subprocess.run(ptxas_cmd, check=True, close_fds=False, stdout=_flog_w, stderr=subprocess.STDOUT)
+                 if knobs.nvidia.dump_ptxas_log:
+                     with open(flog.name) as log_file:
+                         print(log_file.read())
+diff --git a/third_party/nvidia/backend/driver.c b/third_party/nvidia/backend/driver.c
+index 32487ad..025393c 100644
+--- a/third_party/nvidia/backend/driver.c
++++ b/third_party/nvidia/backend/driver.c
+@@ -1,5 +1,9 @@
+ #include "cuda.h"
+ #include <dlfcn.h>
++#ifdef _WIN32
++#include <malloc.h>
++#define alloca _alloca
++#endif
+ #include <stdalign.h>
+ #include <stdbool.h>
+ #include <stddef.h>
+@@ -19,7 +23,7 @@
+ #endif
+ 
+ typedef struct {
+-  PyObject_HEAD;
++  PyObject_HEAD
+   _Alignas(alignof(CUtensorMap)) CUtensorMap tensorMap;
+ } PyCUtensorMapObject;
+ 
+@@ -27,7 +31,7 @@ typedef enum { ARG_CONSTEXPR = 0, ARG_KERNEL = 1, ARG_TUPLE = 2 } ArgType;
+ 
+ // Annotation struct to know how the argument should be handled.
+ typedef struct {
+-  PyObject_HEAD;
++  PyObject_HEAD
+   PyObject *nested_tuple; // Can be a List of PyKernelArgObjects or None
+   ArgType type;
+ } PyKernelArgObject;
+@@ -500,10 +504,18 @@ static PyObject *PyCUtensorMap_alloc(PyTypeObject *type, Py_ssize_t n_items) {
+   void *mem = NULL;
+   size_t size = type->tp_basicsize;
+ 
++#ifdef _WIN32
++  mem = _aligned_malloc(size, 128);
++  if (mem == NULL) {
++    PyErr_NoMemory();
++    return NULL;
++  }
++#else
+   if (posix_memalign(&mem, 128, size) != 0) {
+     PyErr_NoMemory();
+     return NULL;
+   }
++#endif
+ 
+   self = (PyCUtensorMapObject *)mem;
+   PyObject_INIT(self, type);
+@@ -514,7 +526,11 @@ static void PyCUtensorMap_dealloc(PyObject *self) {
+   Py_TYPE(self)->tp_free(self);
+ }
+ 
++#ifdef _WIN32
++static void PyCUtensorMap_free(void *ptr) { _aligned_free(ptr); }
++#else
+ static void PyCUtensorMap_free(void *ptr) { free(ptr); }
++#endif
+ 
+ // clang-format off
+ static PyTypeObject PyCUtensorMapType = {
+@@ -1228,47 +1244,47 @@ typedef enum {
+ 
+ Extractor extraction_map[EXTRACTOR_TYPE_COUNT] = {
+     [EXTRACTOR_UNKOWN_INDEX] =
+-        (Extractor){.extract = NULL, .size = 0, .name = NULL},
+-    [EXTRACTOR_POINTER_INDEX] = (Extractor){.extract = extractPointer,
++        {.extract = NULL, .size = 0, .name = NULL},
++    [EXTRACTOR_POINTER_INDEX] = {.extract = extractPointer,
+                                             .size = sizeof(CUdeviceptr),
+                                             .name = NULL},
+-    [EXTRACTOR_INT8_INDEX] = (Extractor){.extract = extractI8,
++    [EXTRACTOR_INT8_INDEX] = {.extract = extractI8,
+                                          .size = sizeof(int8_t),
+                                          .name = {"i8"}},
+-    [EXTRACTOR_INT16_INDEX] = (Extractor){.extract = extractI16,
++    [EXTRACTOR_INT16_INDEX] = {.extract = extractI16,
+                                           .size = sizeof(int16_t),
+                                           .name = {"i16"}},
+-    [EXTRACTOR_INT32_INDEX] = (Extractor){.extract = extractI32,
++    [EXTRACTOR_INT32_INDEX] = {.extract = extractI32,
+                                           .size = sizeof(int32_t),
+                                           .name = {"i1", "i32"}},
+-    [EXTRACTOR_INT64_INDEX] = (Extractor){.extract = extractI64,
++    [EXTRACTOR_INT64_INDEX] = {.extract = extractI64,
+                                           .size = sizeof(int64_t),
+                                           .name = {"i64"}},
+-    [EXTRACTOR_UINT8_INDEX] = (Extractor){.extract = extractU8,
++    [EXTRACTOR_UINT8_INDEX] = {.extract = extractU8,
+                                           .size = sizeof(uint8_t),
+                                           .name = {"u8"}},
+-    [EXTRACTOR_UINT16_INDEX] = (Extractor){.extract = extractU16,
++    [EXTRACTOR_UINT16_INDEX] = {.extract = extractU16,
+                                            .size = sizeof(uint16_t),
+                                            .name = {"u16"}},
+-    [EXTRACTOR_UINT32_INDEX] = (Extractor){.extract = extractU32,
++    [EXTRACTOR_UINT32_INDEX] = {.extract = extractU32,
+                                            .size = sizeof(uint32_t),
+                                            .name = {"u1", "u32"}},
+-    [EXTRACTOR_UINT64_INDEX] = (Extractor){.extract = extractU64,
++    [EXTRACTOR_UINT64_INDEX] = {.extract = extractU64,
+                                            .size = sizeof(uint64_t),
+                                            .name = {"u64"}},
+-    [EXTRACTOR_FP16_INDEX] = (Extractor){.extract = extractFP16,
++    [EXTRACTOR_FP16_INDEX] = {.extract = extractFP16,
+                                          .size = sizeof(uint16_t),
+                                          .name = {"fp16"}},
+-    [EXTRACTOR_BF16_INDEX] = (Extractor){.extract = extractBF16,
++    [EXTRACTOR_BF16_INDEX] = {.extract = extractBF16,
+                                          .size = sizeof(uint16_t),
+                                          .name = {"bf16"}},
+-    [EXTRACTOR_FP32_INDEX] = (Extractor){.extract = extractFP32,
++    [EXTRACTOR_FP32_INDEX] = {.extract = extractFP32,
+                                          .size = sizeof(uint32_t),
+                                          .name = {"fp32", "f32"}},
+-    [EXTRACTOR_FP64_INDEX] = (Extractor){.extract = extractFP64,
++    [EXTRACTOR_FP64_INDEX] = {.extract = extractFP64,
+                                          .size = sizeof(uint64_t),
+                                          .name = {"fp64"}},
+-    [EXTRACTOR_NVTMADESC_INDEX] = (Extractor){.extract = extractTmaDesc,
++    [EXTRACTOR_NVTMADESC_INDEX] = {.extract = extractTmaDesc,
+                                               .size = sizeof(CUtensorMap),
+                                               .alignment = alignof(CUtensorMap),
+                                               .name = {"nvTmaDesc"}},
+diff --git a/third_party/nvidia/backend/driver.py b/third_party/nvidia/backend/driver.py
+index 4be1e8d..cc45f78 100644
+--- a/third_party/nvidia/backend/driver.py
++++ b/third_party/nvidia/backend/driver.py
+@@ -12,6 +12,9 @@ from triton.backends.driver import GPUDriver, decompose_descriptor, expand_signa
+ 
+ dirname = os.path.dirname(os.path.realpath(__file__))
+ include_dirs = [os.path.join(dirname, "include")]
++if os.name == "nt" and os.getenv("CUDA_PATH"):
++    # Windows: the wheel may not bundle CUDA headers; use the installed toolkit
++    include_dirs.append(os.path.join(os.getenv("CUDA_PATH"), "include"))
+ libdevice_dir = os.path.join(dirname, "lib")
+ libraries = ['libcuda.so.1']
+ PyCUtensorMap = None
+@@ -27,6 +30,16 @@ def libcuda_dirs():
+     if env_libcuda_path := knobs.nvidia.libcuda_path:
+         return [env_libcuda_path]
+ 
++    if os.name == "nt":
++        # Windows: return the CUDA import-library dir (cuda.lib) for the
++        # native architecture; nvcuda.dll itself resolves from System32.
++        cuda_path = os.getenv("CUDA_PATH", "")
++        candidates = []
++        if cuda_path:
++            candidates += [os.path.join(cuda_path, "lib", "arm64"),
++                           os.path.join(cuda_path, "lib", "x64")]
++        return [d for d in candidates if os.path.exists(os.path.join(d, "cuda.lib"))]
++
+     libs = subprocess.check_output(["/sbin/ldconfig", "-p"]).decode(errors="ignore")
+     # each line looks like the following:
+     # libcuda.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libcuda.so.1
+@@ -53,6 +66,9 @@ def library_dirs():
+ 
+ def _cuda_driver_is_active():
+     candidates = ["libcuda.so.1"]
++    if os.name == "nt":
++        # Windows: the CUDA user-mode driver is nvcuda.dll
++        candidates = ["nvcuda.dll"] + candidates
+     try:
+         candidates.extend([os.path.join(path, "libcuda.so.1") for path in libcuda_dirs()])
+     except Exception:
+diff --git a/third_party/nvidia/backend/include/dlfcn.h b/third_party/nvidia/backend/include/dlfcn.h
+new file mode 100644
+index 0000000..534eeac
+--- /dev/null
++++ b/third_party/nvidia/backend/include/dlfcn.h
+@@ -0,0 +1,66 @@
++// Minimal dlfcn shim for Windows builds of the Triton NVIDIA backend.
++// Maps POSIX dl* APIs onto Win32 (only what cublas_instance.h needs).
++#ifndef TRITON_WIN_DLFCN_SHIM_H
++#define TRITON_WIN_DLFCN_SHIM_H
++#ifdef _WIN32
++
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#include <stdio.h>
++#include <string.h>
++
++// windows.h macro leaks that collide with LLVM identifiers
++#ifdef NO_ERROR
++#undef NO_ERROR
++#endif
++#ifdef ERROR
++#undef ERROR
++#endif
++#ifdef OPTIONAL
++#undef OPTIONAL
++#endif
++
++#define RTLD_LAZY 0x1
++#define RTLD_NOW 0x2
++#define RTLD_LOCAL 0x4
++#define RTLD_GLOBAL 0x8
++#define RTLD_NOLOAD 0x10
++
++static inline void *dlopen(const char *name, int flags) {
++  // POSIX library names that callers hardcode -> Windows equivalents
++  if (name && strcmp(name, "libcuda.so.1") == 0)
++    name = "nvcuda.dll";
++  if (flags & RTLD_NOLOAD) {
++    HMODULE mod = NULL;
++    GetModuleHandleExA(0, name, &mod);
++    return (void *)mod;
++  }
++  return (void *)LoadLibraryA(name);
++}
++
++static inline void *dlsym(void *handle, const char *symbol) {
++  return (void *)GetProcAddress((HMODULE)handle, symbol);
++}
++
++static inline int dlclose(void *handle) {
++  return FreeLibrary((HMODULE)handle) ? 0 : -1;
++}
++
++static inline const char *dlerror(void) {
++  static char buf[64];
++  DWORD err = GetLastError();
++  if (err == 0)
++    return NULL;
++  snprintf(buf, sizeof(buf), "win32 error %lu", (unsigned long)err);
++  return buf;
++}
++
++#else
++#include_next <dlfcn.h>
++#endif // _WIN32
++#endif // TRITON_WIN_DLFCN_SHIM_H
+diff --git a/third_party/nvidia/include/dlfcn.h b/third_party/nvidia/include/dlfcn.h
+new file mode 100644
+index 0000000..534eeac
+--- /dev/null
++++ b/third_party/nvidia/include/dlfcn.h
+@@ -0,0 +1,66 @@
++// Minimal dlfcn shim for Windows builds of the Triton NVIDIA backend.
++// Maps POSIX dl* APIs onto Win32 (only what cublas_instance.h needs).
++#ifndef TRITON_WIN_DLFCN_SHIM_H
++#define TRITON_WIN_DLFCN_SHIM_H
++#ifdef _WIN32
++
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#include <stdio.h>
++#include <string.h>
++
++// windows.h macro leaks that collide with LLVM identifiers
++#ifdef NO_ERROR
++#undef NO_ERROR
++#endif
++#ifdef ERROR
++#undef ERROR
++#endif
++#ifdef OPTIONAL
++#undef OPTIONAL
++#endif
++
++#define RTLD_LAZY 0x1
++#define RTLD_NOW 0x2
++#define RTLD_LOCAL 0x4
++#define RTLD_GLOBAL 0x8
++#define RTLD_NOLOAD 0x10
++
++static inline void *dlopen(const char *name, int flags) {
++  // POSIX library names that callers hardcode -> Windows equivalents
++  if (name && strcmp(name, "libcuda.so.1") == 0)
++    name = "nvcuda.dll";
++  if (flags & RTLD_NOLOAD) {
++    HMODULE mod = NULL;
++    GetModuleHandleExA(0, name, &mod);
++    return (void *)mod;
++  }
++  return (void *)LoadLibraryA(name);
++}
++
++static inline void *dlsym(void *handle, const char *symbol) {
++  return (void *)GetProcAddress((HMODULE)handle, symbol);
++}
++
++static inline int dlclose(void *handle) {
++  return FreeLibrary((HMODULE)handle) ? 0 : -1;
++}
++
++static inline const char *dlerror(void) {
++  static char buf[64];
++  DWORD err = GetLastError();
++  if (err == 0)
++    return NULL;
++  snprintf(buf, sizeof(buf), "win32 error %lu", (unsigned long)err);
++  return buf;
++}
++
++#else
++#include_next <dlfcn.h>
++#endif // _WIN32
++#endif // TRITON_WIN_DLFCN_SHIM_H

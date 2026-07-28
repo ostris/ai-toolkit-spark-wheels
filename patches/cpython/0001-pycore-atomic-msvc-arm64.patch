@@ -1,0 +1,54 @@
+--- a/include/internal/pycore_atomic.h
++++ b/include/internal/pycore_atomic.h
+@@ -434,14 +434,14 @@
+     {
+       do {
+         old = *value;
+-      } while(_InterlockedCompareExchange64_acq(value, old, old) != old);
++      } while(_InterlockedCompareExchange64_acq((volatile __int64*)value, (__int64)old, (__int64)old) != old);
+       break;
+     }
+     case _Py_memory_order_release:
+     {
+       do {
+         old = *value;
+-      } while(_InterlockedCompareExchange64_rel(value, old, old) != old);
++      } while(_InterlockedCompareExchange64_rel((volatile __int64*)value, (__int64)old, (__int64)old) != old);
+       break;
+     }
+     case _Py_memory_order_relaxed:
+@@ -451,7 +451,7 @@
+     {
+       do {
+         old = *value;
+-      } while(_InterlockedCompareExchange64(value, old, old) != old);
++      } while(_InterlockedCompareExchange64((volatile __int64*)value, (__int64)old, (__int64)old) != old);
+       break;
+     }
+     }
+@@ -472,14 +472,14 @@
+     {
+       do {
+         old = *value;
+-      } while(_InterlockedCompareExchange_acq(value, old, old) != old);
++      } while(_InterlockedCompareExchange_acq((volatile long*)value, (long)old, (long)old) != old);
+       break;
+     }
+     case _Py_memory_order_release:
+     {
+       do {
+         old = *value;
+-      } while(_InterlockedCompareExchange_rel(value, old, old) != old);
++      } while(_InterlockedCompareExchange_rel((volatile long*)value, (long)old, (long)old) != old);
+       break;
+     }
+     case _Py_memory_order_relaxed:
+@@ -489,7 +489,7 @@
+     {
+       do {
+         old = *value;
+-      } while(_InterlockedCompareExchange(value, old, old) != old);
++      } while(_InterlockedCompareExchange((volatile long*)value, (long)old, (long)old) != old);
+       break;
+     }
+     }

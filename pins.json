@@ -1,0 +1,126 @@
+{
+  "comment": "Single source of truth for the RTX Spark (Windows on ARM, CUDA 13.4) wheel set. Bump a pin, run build.py, review any patch that no longer applies.",
+  "cuda_arch": "12.1",
+  "python": "cpython-3.12-windows-aarch64-none",
+  "local_tag": "cu134",
+  "build_date_tag": "20260727",
+  "toolchain": {
+    "cuda_min": "13.4",
+    "cudnn_min": "9.25",
+    "msvc": "VS2022 BuildTools + VC.Tools.ARM64 + Windows11SDK",
+    "notes": "CUDA 13.4 developer-preview toolkit + R616 driver are MANUAL installs (NVIDIA EULA); cuDNN via NVIDIA's official installer URL; APL + BuildTools via winget. See env.py."
+  },
+  "components": {
+    "torch": {
+      "repo": "https://github.com/pytorch/pytorch.git",
+      "ref": "refs/pull/190448/head",
+      "pin": "544deabf89f6ec1b64d6f2c4c1eb46fd004c0068",
+      "version": "2.14.0.dev20260727+cu134",
+      "script": "build_torch.bat",
+      "workspace": "pytorch",
+      "notes": "PR 190448 = NVIDIA's WoA CTK enablement. USE_DISTRIBUTED=1 (torchao needs c10d ops), USE_CUDNN=1, in-tree FLASH/MEM_EFF=1 (mem-eff works; flash guarded off for sm12x upstream). Needs libuv (build_libuv.bat) first."
+    },
+    "torchvision": {
+      "repo": "https://github.com/pytorch/vision.git",
+      "ref": "main",
+      "version": "0.29.0.dev20260727+cu134",
+      "script": "build_vision_audio.bat",
+      "workspace": "vision"
+    },
+    "torchaudio": {
+      "repo": "https://github.com/pytorch/audio.git",
+      "ref": "main",
+      "version": "2.11.0.dev20260727+cu134",
+      "script": "build_vision_audio.bat",
+      "workspace": "audio"
+    },
+    "torchcodec": {
+      "repo": "https://github.com/pytorch/torchcodec.git",
+      "ref": "v0.15.0",
+      "version": "0.15.0",
+      "script": "build_torchcodec.bat",
+      "workspace": "torchcodec",
+      "notes": "v0.15 tag deliberately (main's TORCHCODEC_BUILD_IMAGE=OFF path has an unresolved decode_avif stub). Links LGPL BtbN ffmpeg 8.1 winarm64 shared; needs pkg-config-lite (winget)."
+    },
+    "flash-attn": {
+      "repo": "https://github.com/Dao-AILab/flash-attention.git",
+      "ref": "v2.8.3",
+      "version": "2.8.3+cu134torch2.14",
+      "patches": [
+        "flash-attention/0001-msvc-arm64-cxx20-twophase-sm121.patch"
+      ],
+      "script": "build_flash_attn.bat",
+      "workspace": "flash-attention",
+      "notes": "MAX_JOBS=2 x NVCC_THREADS=2 \u2014 higher exhausted 54GB commit. /Zc:twoPhase- is the key MSVC-C++20-vs-cute fix."
+    },
+    "natten": {
+      "repo": "https://github.com/SHI-Labs/NATTEN.git",
+      "ref": "v0.21.7",
+      "version": "0.21.7",
+      "patches": [
+        "natten/0001-msvc-arm64-flags.patch"
+      ],
+      "script": "build_natten.bat",
+      "workspace": "natten",
+      "notes": "/permissive- must come BEFORE /Zc:twoPhase- (later flag wins)."
+    },
+    "triton": {
+      "repo": "https://github.com/triton-lang/triton-windows.git",
+      "ref": "main",
+      "version": "3.8.0+git8743423b",
+      "patches": [
+        "triton-windows/0001-win-arm64-cuda-port.patch"
+      ],
+      "script": "build_triton.bat",
+      "workspace": "triton-windows",
+      "notes": "Needs LLVM at cmake/llvm-info.json hash built via build_triton_llvm.bat (mlir+llvm+lld, +FileCheck copied extensionless) and nlohmann json at C:\\Dev\\json-nlohmann. ptxas/cuobjdump/nvdisasm ship inside the wheel (packed-in-wheel is acceptable; no standalone DLL/file distribution), with manager env overrides pointing at the user's CUDA install as fallback. Watch triton-windows PR #49 (official ARM64 CI, TinyCC launcher): when released working, retire this component."
+    },
+    "llvmlite": {
+      "sdist": "llvmlite==0.49.0rc1",
+      "version": "0.49.0rc1",
+      "patches": [
+        "llvmlite/0001-msvc-no-dump.patch"
+      ],
+      "script": "build_llvm_llvmlite.bat",
+      "workspace": "llvmlite-0.49.0rc1",
+      "notes": "Needs LLVM 22.x static (same script builds it at C:\\Dev\\llvm22; DIA off, RTTI on). Release LLVM lacks dump() -> patch stubs them."
+    },
+    "numba": {
+      "sdist": "numba==0.67.0rc1",
+      "version": "0.67.0rc1",
+      "script": "build_numba.bat",
+      "workspace": "numba-0.67.0rc1",
+      "notes": "Requires the cpython pycore_atomic.h patch applied to the BUILD interpreter's include dir (patches/cpython)."
+    },
+    "bitsandbytes": {
+      "repo": "https://github.com/bitsandbytes-foundation/bitsandbytes.git",
+      "ref": "0.50.0",
+      "version": "0.50.0+cu134",
+      "script": "build_bnb.bat",
+      "workspace": "bnb",
+      "notes": "Wheel retagged +cu134 post-build so it outranks PyPI's CPU-only 0.50.0 (PEP440 local version)."
+    },
+    "opencv-python": {
+      "sdist": "opencv-python==4.12.0.88",
+      "version": "4.12.0.88",
+      "script": "build_opencv.bat",
+      "notes": "BUILD_opencv_dnn=OFF (__fp16 MSVC-arm64 bug), CPU_BASELINE=NEON; runtime needs OPENCV_SKIP_CPU_BASELINE_CHECK=1 (manager sets it). Builds -headless too."
+    },
+    "small-wheels": {
+      "sdists": [
+        "pywavelets==1.9.0",
+        "soxr==1.1.0",
+        "brotli==1.2.0"
+      ],
+      "script": "build_small_wheels.bat"
+    },
+    "kornia-rs": {
+      "sdist": "kornia-rs==0.1.14",
+      "version": "0.1.14",
+      "script": "build_kornia_rs.bat",
+      "workspace": "ksrc",
+      "notes": "Requires Rust (aarch64-pc-windows-msvc) and `cargo update -p generator` (0.8.8 lacks aarch64_windows.rs; 0.8.9 fixed) \u2014 build.py runs the update, no patch file."
+    }
+  },
+  "comment2": "workspace values are directory names under <repo>/workspaces (created by build.py; gitignored). Set SPARKW_ROOT to reuse an existing workspace tree elsewhere."
+}

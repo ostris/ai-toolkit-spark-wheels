@@ -1,0 +1,54 @@
+--- a/ffi/custom_passes.cpp
++++ b/ffi/custom_passes.cpp
+@@ -300,9 +300,9 @@
+                     if (decref && isRelatedDecref(incref, decref)) {
+                         if (DEBUG_PRINT) {
+                             errs() << "Prune: matching pair in BB:\n";
+-                            incref->dump();
+-                            decref->dump();
+-                            incref->getParent()->dump();
++                            ;// dump() not available in non-assert LLVM builds
++                            ;// dump() not available in non-assert LLVM builds
++                            ;// dump() not available in non-assert LLVM builds
+                         }
+                         // strip incref and decref from blck
+                         incref->eraseFromParent();
+@@ -414,9 +414,9 @@
+                         if (DEBUG_PRINT) {
+                             errs() << F.getName() << "-------------\n";
+                             errs() << incref->getParent()->getName() << "\n";
+-                            incref->dump();
++                            ;// dump() not available in non-assert LLVM builds
+                             errs() << decref->getParent()->getName() << "\n";
+-                            decref->dump();
++                            ;// dump() not available in non-assert LLVM builds
+                         }
+ 
+                         // erase instruction from block and set NULL marker for
+@@ -561,7 +561,7 @@
+                            << "\n";
+                     errs() << "  decref_blocks.size()" << decref_blocks.size()
+                            << "\n";
+-                    incref->dump();
++                    ;// dump() not available in non-assert LLVM builds
+                 }
+                 // Remove first related decref in each block
+                 // for each block
+@@ -577,7 +577,7 @@
+                             if (DEBUG_PRINT) {
+                                 errs()
+                                     << decref->getParent()->getName() << "\n";
+-                                decref->dump();
++                                ;// dump() not available in non-assert LLVM builds
+                             }
+                             // Remove this decref from its block
+                             decref->eraseFromParent();
+@@ -644,7 +644,7 @@
+                 errs() << "forward pass candids.size() = "
+                        << decref_blocks->size() << "\n";
+                 errs() << "    " << head_node->getName() << "\n";
+-                incref->dump();
++                ;// dump() not available in non-assert LLVM builds
+             }
+             if (decref_blocks->size() == 0) {
+                 // no decref blocks
