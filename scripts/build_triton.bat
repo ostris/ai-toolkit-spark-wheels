@@ -38,5 +38,6 @@ if errorlevel 1 (
     echo TRITON_FAILED
     exit /b 1
 )
+python "%~dp0strip_debug_from_wheel.py" "%SPARKW_WHEELS%	riton-3.8.0+git8743423b-cp312-cp312-win_arm64.whl"
 echo TRITON_OK
 dir %SPARKW_WHEELS%\triton*
