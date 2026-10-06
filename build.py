@@ -144,9 +144,12 @@ def prepare_source(name, comp, env):
             run(["git", "init", ws])
             run(["git", "-C", ws, "remote", "add", "origin", comp["repo"]])
             run(["git", "-C", ws, "config", "core.longpaths", "true"])
-        run(["git", "-C", ws, "fetch", "--depth", "1", "origin", comp["ref"]])
-        run(["git", "-C", ws, "checkout", "-f",
-             comp.get("pin", "FETCH_HEAD")])
+        # Fetch the pinned SHA directly when one is set: a PR ref such as
+        # refs/pull/N/head moves on force-push, and a depth-1 fetch of it
+        # would no longer contain the pin. GitHub serves any existing SHA.
+        run(["git", "-C", ws, "fetch", "--depth", "1", "origin",
+             comp.get("pin") or comp["ref"]])
+        run(["git", "-C", ws, "checkout", "-f", "FETCH_HEAD"])
         run(["git", "-C", ws, "submodule", "update", "--init", "--recursive",
              "--depth", "1"])
     elif comp.get("sdist") and ws and not os.path.isdir(ws):

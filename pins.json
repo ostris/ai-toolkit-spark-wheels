@@ -14,7 +14,7 @@
     "torch": {
       "repo": "https://github.com/pytorch/pytorch.git",
       "ref": "refs/pull/190448/head",
-      "pin": "544deabf89f6ec1b64d6f2c4c1eb46fd004c0068",
+      "pin": "544deabf89f6f64dd754ebbec21e3521cbbe9502",
       "version": "2.14.0.dev20260727+cu134",
       "script": "build_torch.bat",
       "workspace": "pytorch",
