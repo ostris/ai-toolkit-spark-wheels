@@ -111,15 +111,21 @@ def ensure_buildenv(pins, env):
                         dirs_exist_ok=True)
     # shared build venv lives inside the pytorch workspace (scripts expect it)
     venv = os.path.join(WORKSPACES, "pytorch", ".venv-arm")
-    if not os.path.isfile(os.path.join(venv, "Scripts", "python.exe")):
+    vpython = os.path.join(venv, "Scripts", "python.exe")
+    if not os.path.isfile(vpython):
         os.makedirs(os.path.join(WORKSPACES, "pytorch"), exist_ok=True)
         run([python, "-m", "venv", venv])
-        pip = os.path.join(venv, "Scripts", "pip.exe")
-        run([pip, "install", "--quiet", "--upgrade", "pip"])
-        run([pip, "install", "--quiet", "build", "wheel", "setuptools",
-             "cmake", "ninja", "pybind11", "numpy", "pyyaml",
-             "typing-extensions", "maturin", "scikit_build_core",
-             "setuptools-scm", "nanobind", "psutil", "einops"])
+    # Always (re)install: idempotent, and heals a venv whose bootstrap died
+    # part-way. Go through python -m pip: pip.exe refuses to upgrade itself
+    # on Windows. The torch build runs --no-isolation, so everything in its
+    # requirements-build.txt must be here (six: NNPACK -> PeachPy -> six).
+    pip = [vpython, "-m", "pip"]
+    run(pip + ["install", "--quiet", "--upgrade", "pip"])
+    run(pip + ["install", "--quiet", "build", "wheel", "setuptools",
+               "cmake", "ninja", "pybind11", "numpy", "pyyaml",
+               "typing-extensions", "maturin", "scikit_build_core",
+               "setuptools-scm", "nanobind", "psutil", "einops",
+               "six", "packaging", "requests", "spin"])
     # shared third-party downloads
     ffdir = os.path.join(
         WORKSPACES, "ffmpeg-n8.1-latest-winarm64-lgpl-shared-8.1")

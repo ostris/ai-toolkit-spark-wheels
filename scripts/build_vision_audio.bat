@@ -29,7 +29,7 @@ set MAX_JOBS=14
 if not exist %SPARKW_WHEELS% mkdir %SPARKW_WHEELS%
 
 REM ---------------- torchvision (with CUDA ops, sm_121) ----------------
-cd /d %SPARKW_ROOT%ision
+cd /d %SPARKW_ROOT%\vision
 set FORCE_CUDA=1
 set TORCH_CUDA_ARCH_LIST=12.1
 set BUILD_VERSION=0.29.0.dev20260727+cu134
@@ -43,7 +43,7 @@ copy /y dist\*.whl %SPARKW_WHEELS%\
 echo VISION_BUILD_OK
 
 REM ---------------- torchaudio (CPU ext only) ----------------
-cd /d %SPARKW_ROOT%udio
+cd /d %SPARKW_ROOT%\audio
 set USE_CUDA=0
 set FORCE_CUDA=
 set USE_FFMPEG=0

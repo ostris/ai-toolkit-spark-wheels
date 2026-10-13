@@ -10,7 +10,7 @@ call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliar
 if errorlevel 1 exit /b 1
 
 set "VENV=%SPARKW_ROOT%\pytorch\.venv-arm"
-set "FFMPEG=%SPARKW_ROOT%fmpeg-n8.1-latest-winarm64-lgpl-shared-8.1"
+set "FFMPEG=%SPARKW_ROOT%\ffmpeg-n8.1-latest-winarm64-lgpl-shared-8.1"
 set "PKGCONF=%LOCALAPPDATA%\Microsoft\WinGet\Packages\bloodrock.pkg-config-lite_Microsoft.Winget.Source_8wekyb3d8bbwe\pkg-config-lite-0.28-1\bin"
 set "PATH=%VENV%\Scripts;%PKGCONF%;%FFMPEG%\bin;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin\arm64;C:\Program Files\NVIDIA\CUDNN\v9.25\bin\13.4\arm64;C:\Program Files\Arm Performance Libraries\armpl_26.01\bin;C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 

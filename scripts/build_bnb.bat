@@ -13,8 +13,8 @@ set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4"
 set "CUDA_HOME=%CUDA_PATH%"
 set "PATH=%CUDA_PATH%\bin;%PATH%"
 
-if not exist %SPARKW_ROOT%nb git clone --depth 1 -b 0.50.0 https://github.com/bitsandbytes-foundation/bitsandbytes.git %SPARKW_ROOT%nb
-cd /d %SPARKW_ROOT%nb
+if not exist %SPARKW_ROOT%\bnb git clone --depth 1 -b 0.50.0 https://github.com/bitsandbytes-foundation/bitsandbytes.git %SPARKW_ROOT%\bnb
+cd /d %SPARKW_ROOT%\bnb
 cmake -B build -G Ninja -DCOMPUTE_BACKEND=cuda -DCMAKE_CUDA_ARCHITECTURES=121 -DCMAKE_BUILD_TYPE=Release
 if errorlevel 1 (
     echo BNB_CMAKE_FAILED
