@@ -15,6 +15,7 @@ set "PATH=%CUDA_PATH%\bin;%PATH%"
 
 if not exist %SPARKW_ROOT%\bnb git clone --depth 1 -b 0.50.0 https://github.com/bitsandbytes-foundation/bitsandbytes.git %SPARKW_ROOT%\bnb
 cd /d %SPARKW_ROOT%\bnb
+if errorlevel 1 exit /b 1
 cmake -B build -G Ninja -DCOMPUTE_BACKEND=cuda -DCMAKE_CUDA_ARCHITECTURES=121 -DCMAKE_BUILD_TYPE=Release
 if errorlevel 1 (
     echo BNB_CMAKE_FAILED

@@ -109,6 +109,11 @@ def ensure_buildenv(pins, env):
                     shutil.copytree(
                         os.path.join(WORKSPACES, "python", name), pyhome,
                         dirs_exist_ok=True)
+    # numba's C extensions include pycore_atomic.h, whose MSVC intrinsics
+    # calls don't type-check on arm64; patch the build interpreter's header.
+    apply_patch_once(
+        os.path.join(PATCHES, "cpython", "0001-pycore-atomic-msvc-arm64.patch"),
+        pyhome)
     # shared build venv lives inside the pytorch workspace (scripts expect it)
     venv = os.path.join(WORKSPACES, "pytorch", ".venv-arm")
     vpython = os.path.join(venv, "Scripts", "python.exe")
@@ -141,6 +146,64 @@ def ensure_buildenv(pins, env):
                           "json.hpp"))
 
 
+def apply_patch_once(patch, cwd):
+    """Apply a unified diff to a plain directory tree; no-op if already in."""
+    # cwd sits under the (gitignored) workspaces dir inside this repo; stop
+    # git's repo discovery there so paths resolve relative to cwd.
+    e = os.environ.copy()
+    e["GIT_CEILING_DIRECTORIES"] = os.path.dirname(cwd)
+    e.pop("GIT_DIR", None)
+    reverse = subprocess.run(["git", "apply", "--check", "--reverse", patch],
+                             cwd=cwd, env=e, capture_output=True)
+    if reverse.returncode == 0:
+        print("patch already applied: %s" % os.path.basename(patch))
+        return
+    run(["git", "apply", "--verbose", patch], cwd=cwd, env=e)
+
+
+def fetch_sdist(spec, ws):
+    """Download name==version's sdist from PyPI and unpack it as <ws>.
+
+    Deliberately not `pip download`: pip prepares metadata from the sdist,
+    and with --no-binary :all: that compiles the build backend's own deps
+    (numpy, Cython) from source, which fails on win_arm64.
+    """
+    import hashlib
+    import tarfile
+    name, _, version = spec.partition("==")
+    url = "https://pypi.org/pypi/%s/%s/json" % (name, version)
+    with urllib.request.urlopen(url) as r:
+        meta = json.load(r)
+    sdists = [u for u in meta["urls"] if u["packagetype"] == "sdist"]
+    if not sdists:
+        sys.exit("no sdist on PyPI for %s" % spec)
+    info = sdists[0]
+    dest = os.path.join(WORKSPACES, "_sdists", info["filename"])
+    download(info["url"], dest)
+    with open(dest, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    if digest != info["digests"]["sha256"]:
+        os.remove(dest)
+        sys.exit("sha256 mismatch for %s" % info["filename"])
+    with tarfile.open(dest) as t:
+        top = t.getnames()[0].split("/")[0]
+        t.extractall(WORKSPACES)
+    # sdist top-level dir is name-version; pins.json may call it otherwise
+    if top != os.path.basename(ws):
+        os.rename(os.path.join(WORKSPACES, top), ws)
+
+
+def patch_created_files(patch):
+    """Relative paths of files a unified diff creates (--- /dev/null)."""
+    out, prev = [], ""
+    with open(patch, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if prev.startswith("--- /dev/null") and line.startswith("+++ b/"):
+                out.append(line[len("+++ b/"):].strip().replace("/", os.sep))
+            prev = line
+    return out
+
+
 def prepare_source(name, comp, env):
     """Clone/fetch at the pinned ref (or sdist) and apply patches."""
     ws_name = comp.get("workspace")
@@ -159,19 +222,24 @@ def prepare_source(name, comp, env):
         run(["git", "-C", ws, "submodule", "update", "--init", "--recursive",
              "--depth", "1"])
     elif comp.get("sdist") and ws and not os.path.isdir(ws):
-        pip = os.path.join(WORKSPACES, "pytorch", ".venv-arm", "Scripts",
-                           "pip.exe")
-        dl = os.path.join(WORKSPACES, "_sdists")
-        run([pip, "download", "--no-deps", "--no-binary", ":all:",
-             comp["sdist"], "-d", dl])
-        import tarfile
-        for f in os.listdir(dl):
-            if f.endswith(".tar.gz"):
-                with tarfile.open(os.path.join(dl, f)) as t:
-                    t.extractall(WORKSPACES)
+        fetch_sdist(comp["sdist"], ws)
     for rel in comp.get("patches", []):
-        run(["git", "-C", ws or HERE, "apply", "--verbose",
-             os.path.join(PATCHES, rel)])
+        patch = os.path.join(PATCHES, rel)
+        # checkout -f resets tracked files but leaves files a previous patch
+        # application created (some live under gitignored dirs, so git clean
+        # would miss them); git apply refuses to overwrite. Remove exactly
+        # the files this patch creates before re-applying.
+        # sdist workspaces are plain directories: nothing resets them between
+        # runs, so skip a patch that is already in (apply_patch_once).
+        if not subprocess.run(["git", "apply", "--check", "--reverse", patch],
+                              cwd=ws or HERE, capture_output=True).returncode:
+            print("patch already applied: %s" % rel)
+            continue
+        for created in patch_created_files(patch):
+            target = os.path.join(ws or HERE, created)
+            if os.path.isfile(target):
+                os.remove(target)
+        run(["git", "-C", ws or HERE, "apply", "--verbose", patch])
     if name == "kornia-rs" and ws and os.path.isdir(ws):
         cargo = os.path.expanduser(r"~\.cargo\bin\cargo.exe")
         run([cargo, "update", "-p", "generator"], cwd=ws)
@@ -184,7 +252,11 @@ def build_component(name, comp, env, prepare_only=False):
         prepare_source(name, comp, env)
     if prepare_only:
         return
-    run(["cmd", "/c", os.path.join(SCRIPTS, comp["script"])], env=env)
+    # Scripts shared by several components (build_vision_audio.bat) use this
+    # to build only the requested one instead of everything they know about.
+    e = dict(env)
+    e["SPARKW_COMPONENT"] = name
+    run(["cmd", "/c", os.path.join(SCRIPTS, comp["script"])], env=e)
 
 
 def doctor():

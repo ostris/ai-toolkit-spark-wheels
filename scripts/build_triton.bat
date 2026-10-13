@@ -25,19 +25,21 @@ set "TRITON_NVDISASM_PATH=%CUDA_PATH%\bin\nvdisasm.exe"
 set "TRITON_CUDACRT_PATH=%CUDA_PATH%\include"
 set "TRITON_CUDART_PATH=%CUDA_PATH%\include"
 set TRITON_BUILD_PROTON=OFF
-set "TRITON_APPEND_CMAKE_ARGS=-DLLD_DIR=C:/Dev/llvm-triton-install/lib/cmake/lld"
+set "SPARKW_ROOT_FWD=%SPARKW_ROOT:\=/%"
+set "TRITON_APPEND_CMAKE_ARGS=-DLLD_DIR=%SPARKW_ROOT_FWD%/llvm-triton-install/lib/cmake/lld"
 set TRITON_PARALLEL_LINK_JOBS=2
 set MAX_JOBS=6
 set MSSdk=1
 set DISTUTILS_USE_SDK=1
 
-cd /d %SPARKW_ROOT%	riton-windows
+cd /d %SPARKW_ROOT%\triton-windows
+if errorlevel 1 exit /b 1
 pip install --quiet pybind11 wheel nanobind setuptools-scm cmake ninja
 pip wheel --no-deps --no-build-isolation --wheel-dir %SPARKW_WHEELS% .
 if errorlevel 1 (
     echo TRITON_FAILED
     exit /b 1
 )
-python "%~dp0strip_debug_from_wheel.py" "%SPARKW_WHEELS%	riton-3.8.0+git8743423b-cp312-cp312-win_arm64.whl"
+python "%~dp0strip_debug_from_wheel.py" "%SPARKW_WHEELS%\triton-3.8.0+git8743423b-cp312-cp312-win_arm64.whl"
 echo TRITON_OK
 dir %SPARKW_WHEELS%\triton*

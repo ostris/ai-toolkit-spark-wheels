@@ -14,13 +14,12 @@ set DISTUTILS_USE_SDK=1
 if not exist %SPARKW_TMP% mkdir %SPARKW_TMP%
 set "TMP=%SPARKW_TMP%"
 set "TEMP=%SPARKW_TMP%"
-if not exist %SPARKW_ROOT%
-umba-0.67.0rc1 (
-    pip download --no-deps --no-binary :all: "numba==0.67.0rc1" -d %SPARKW_TMP%\numba-sdist
-    for %%F in (%SPARKW_TMP%\numba-sdist\numba-*.tar.gz) do tar -xzf %%F -C %SPARKW_ROOT%\
+if not exist %SPARKW_ROOT%\numba-0.67.0rc1 (
+    echo NUMBA_SRC_MISSING: run python build.py numba -- it fetches the sdist from PyPI. pip download would build numpy from source on win_arm64 and fail.
+    exit /b 1
 )
-cd /d %SPARKW_ROOT%
-umba-0.67.0rc1
+cd /d %SPARKW_ROOT%\numba-0.67.0rc1
+if errorlevel 1 exit /b 1
 pip wheel --no-deps --no-build-isolation --wheel-dir %SPARKW_WHEELS% .
 if errorlevel 1 (
     echo NUMBA_FAILED

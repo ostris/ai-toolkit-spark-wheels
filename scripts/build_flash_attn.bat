@@ -14,6 +14,7 @@ set "CUDA_HOME=%CUDA_PATH%"
 set "PATH=%CUDA_PATH%\bin;%CUDA_PATH%\bin\arm64;C:\Program Files\NVIDIA\CUDNN\v9.25\bin\13.4\arm64;C:\Program Files\Arm Performance Libraries\armpl_26.01\bin;C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 
 cd /d %SPARKW_ROOT%\flash-attention
+if errorlevel 1 exit /b 1
 git submodule update --init csrc/cutlass
 if errorlevel 1 exit /b 1
 

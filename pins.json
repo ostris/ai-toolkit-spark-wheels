@@ -23,6 +23,7 @@
     "torchvision": {
       "repo": "https://github.com/pytorch/vision.git",
       "ref": "main",
+      "pin": "0b798b3675174c4e38aeb208663d2e72d69791d7",
       "version": "0.29.0.dev20260727+cu134",
       "script": "build_vision_audio.bat",
       "workspace": "vision"
@@ -30,6 +31,7 @@
     "torchaudio": {
       "repo": "https://github.com/pytorch/audio.git",
       "ref": "main",
+      "pin": "c0cbdb95674556cdff7266f2d44bb855f634cfde",
       "version": "2.11.0.dev20260727+cu134",
       "script": "build_vision_audio.bat",
       "workspace": "audio"
@@ -67,6 +69,7 @@
     "triton": {
       "repo": "https://github.com/triton-lang/triton-windows.git",
       "ref": "main",
+      "pin": "8743423bf3a5c7be54804bb2d7704eb0d3f70bc1",
       "version": "3.8.0+git8743423b",
       "patches": [
         "triton-windows/0001-win-arm64-cuda-port.patch"

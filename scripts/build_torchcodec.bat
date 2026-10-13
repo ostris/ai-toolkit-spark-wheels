@@ -27,7 +27,8 @@ set "TMP=%SPARKW_TMP%"
 set "TEMP=%SPARKW_TMP%"
 
 pip install --quiet pybind11
-cd /d %SPARKW_ROOT%	orchcodec
+cd /d %SPARKW_ROOT%\torchcodec
+if errorlevel 1 exit /b 1
 pip wheel --no-deps --no-build-isolation --wheel-dir %SPARKW_WHEELS% .
 if errorlevel 1 (
     echo TORCHCODEC_FAILED

@@ -13,6 +13,7 @@ call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliar
 if errorlevel 1 exit /b 1
 
 cd /d %SPARKW_ROOT%\pytorch
+if errorlevel 1 exit /b 1
 call .venv-arm\Scripts\activate.bat
 
 set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4"
@@ -67,4 +68,10 @@ if errorlevel 1 (
 )
 echo BUILD_SUCCEEDED
 copy /y dist\*.whl "%SPARKW_WHEELS%"
+REM Downstream scripts (vision/audio/codec/flash-attn/natten/bnb/triton) import torch from this venv.
+for %%f in (dist\torch-*.whl) do pip install --quiet --force-reinstall --no-deps "%%f"
+if errorlevel 1 exit /b 1
+REM second pass pulls torch runtime deps (filelock, sympy, networkx, jinja2, fsspec) without reinstalling torch
+for %%f in (dist\torch-*.whl) do pip install --quiet "%%f"
+if errorlevel 1 exit /b 1
 dir dist

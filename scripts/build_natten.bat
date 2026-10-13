@@ -14,8 +14,8 @@ set "CUDA_HOME=%CUDA_PATH%"
 set "PATH=%CUDA_PATH%\bin;%CUDA_PATH%\bin\arm64;C:\Program Files\NVIDIA\CUDNN\v9.25\bin\13.4\arm64;C:\Program Files\Arm Performance Libraries\armpl_26.01\bin;C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 set "LINK=/LIBPATH:%SPARKW_PYHOME%\libs"
 
-cd /d %SPARKW_ROOT%
-atten
+cd /d %SPARKW_ROOT%\natten
+if errorlevel 1 exit /b 1
 set NATTEN_CUDA_ARCH=12.1
 set NATTEN_N_WORKERS=6
 set NATTEN_VERBOSE=1

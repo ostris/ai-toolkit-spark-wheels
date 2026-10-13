@@ -27,9 +27,11 @@ set CMAKE_POLICY_VERSION_MINIMUM=3.5
 set MAX_JOBS=14
 
 if not exist %SPARKW_WHEELS% mkdir %SPARKW_WHEELS%
+if "%SPARKW_COMPONENT%"=="torchaudio" goto audio
 
 REM ---------------- torchvision (with CUDA ops, sm_121) ----------------
 cd /d %SPARKW_ROOT%\vision
+if errorlevel 1 exit /b 1
 set FORCE_CUDA=1
 set TORCH_CUDA_ARCH_LIST=12.1
 set BUILD_VERSION=0.29.0.dev20260727+cu134
@@ -42,8 +44,11 @@ if errorlevel 1 (
 copy /y dist\*.whl %SPARKW_WHEELS%\
 echo VISION_BUILD_OK
 
+if "%SPARKW_COMPONENT%"=="torchvision" goto done
+:audio
 REM ---------------- torchaudio (CPU ext only) ----------------
 cd /d %SPARKW_ROOT%\audio
+if errorlevel 1 exit /b 1
 set USE_CUDA=0
 set FORCE_CUDA=
 set USE_FFMPEG=0
@@ -57,3 +62,4 @@ if errorlevel 1 (
 copy /y dist\*.whl %SPARKW_WHEELS%\
 echo AUDIO_BUILD_OK
 dir %SPARKW_WHEELS%
+:done

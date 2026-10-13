@@ -11,6 +11,7 @@ if errorlevel 1 exit /b 1
 set "PATH=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 if not exist %SPARKW_ROOT%\libuv git clone --depth 1 -b v1.51.0 https://github.com/libuv/libuv %SPARKW_ROOT%\libuv
 cd /d %SPARKW_ROOT%\libuv
+if errorlevel 1 exit /b 1
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=%SPARKW_ROOT%\libuv\install -DBUILD_TESTING=OFF -DLIBUV_BUILD_SHARED=ON
 if errorlevel 1 exit /b 1
 cmake --build build --target install

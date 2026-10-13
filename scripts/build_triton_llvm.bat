@@ -19,6 +19,7 @@ if not exist %SPARKW_ROOT%\llvm-triton (
     git clone --filter=blob:none https://github.com/llvm/llvm-project.git %SPARKW_ROOT%\llvm-triton
 )
 cd /d %SPARKW_ROOT%\llvm-triton
+if errorlevel 1 exit /b 1
 git fetch --depth 1 origin 850a2b1b975c061ae0fc982ba68064d305485cb2
 if errorlevel 1 exit /b 1
 git checkout 850a2b1b975c061ae0fc982ba68064d305485cb2
@@ -49,4 +50,9 @@ if errorlevel 1 (
     echo TRITON_LLVM_BUILD_FAILED
     exit /b 1
 )
+REM LLVM does not install FileCheck without LLVM_INSTALL_UTILS; Triton's CMake requires it as an extensionless file.
+copy /y "build\bin\FileCheck.exe" "%SPARKW_ROOT%\llvm-triton-install\bin\FileCheck.exe"
+if errorlevel 1 exit /b 1
+copy /y "build\bin\FileCheck.exe" "%SPARKW_ROOT%\llvm-triton-install\bin\FileCheck"
+if errorlevel 1 exit /b 1
 echo TRITON_LLVM_OK

@@ -16,7 +16,13 @@ set "TMP=%SPARKW_TMP%"
 set "TEMP=%SPARKW_TMP%"
 
 if not exist %SPARKW_ROOT%\llvm-project git clone --depth 1 -b release/22.x https://github.com/llvm/llvm-project.git %SPARKW_ROOT%\llvm-project
+REM Pin: release/22.x moves; this is the commit the cu134-20260727 wheels were built from.
+git -C %SPARKW_ROOT%\llvm-project fetch --depth 1 origin ca7933e47d3a3451d81e72ac174dcb5aa28b59d1
+if errorlevel 1 exit /b 1
+git -C %SPARKW_ROOT%\llvm-project checkout -f FETCH_HEAD
+if errorlevel 1 exit /b 1
 cd /d %SPARKW_ROOT%\llvm-project
+if errorlevel 1 exit /b 1
 
 cmake -S llvm -B build -G Ninja ^
   -DCMAKE_BUILD_TYPE=Release ^
@@ -49,6 +55,7 @@ set "LLVM_DIR=%SPARKW_ROOT%\llvm22\lib\cmake\llvm"
 set "CMAKE_PREFIX_PATH=%SPARKW_ROOT%\llvm22"
 set LLVMLITE_SKIP_LLVM_VERSION_CHECK=1
 cd /d %SPARKW_ROOT%\llvmlite-0.49.0rc1
+if errorlevel 1 exit /b 1
 pip wheel --no-deps --no-build-isolation --wheel-dir %SPARKW_WHEELS% .
 if errorlevel 1 (
     echo LLVMLITE_FAILED
@@ -56,16 +63,15 @@ if errorlevel 1 (
 )
 pip install --no-index --find-links %SPARKW_WHEELS% llvmlite
 echo LLVMLITE_OK
+if "%SPARKW_COMPONENT%"=="llvmlite" goto done
 
 REM ---- Stage 3: numba ----
-pip download --no-deps --no-binary :all: "numba==0.67.0rc1" -d %SPARKW_TMP%\numba-sdist
-if errorlevel 1 (
-    echo NUMBA_DOWNLOAD_FAILED
+if not exist %SPARKW_ROOT%\numba-0.67.0rc1 (
+    echo NUMBA_SRC_MISSING: run python build.py numba -- it fetches the sdist from PyPI. pip download would build numpy from source on win_arm64 and fail.
     exit /b 1
 )
-for %%F in (%SPARKW_TMP%\numba-sdist\numba-*.tar.gz) do tar -xzf %%F -C %SPARKW_ROOT%\
-cd /d %SPARKW_ROOT%
-umba-0.67.0rc1
+cd /d %SPARKW_ROOT%\numba-0.67.0rc1
+if errorlevel 1 exit /b 1
 pip wheel --no-deps --no-build-isolation --wheel-dir %SPARKW_WHEELS% .
 if errorlevel 1 (
     echo NUMBA_FAILED
@@ -73,3 +79,4 @@ if errorlevel 1 (
 )
 echo NUMBA_OK
 dir %SPARKW_WHEELS%\*.whl
+:done
